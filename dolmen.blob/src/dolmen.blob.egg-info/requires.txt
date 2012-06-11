@@ -1,0 +1,26 @@
+ZODB3 >= 3.9.0
+dolmen.builtins >= 0.3.1
+dolmen.file >= 0.5.1
+grokcore.component
+grokcore.view
+setuptools
+zope.component >= 3.9.1
+zope.contenttype
+zope.copy >= 3.5.0
+zope.file
+zope.filerepresentation
+zope.interface
+zope.location >= 3.7.0
+zope.mimetype
+zope.publisher
+zope.schema
+
+[test]
+transaction
+zope.container
+zope.size
+zope.testing
+zope.security
+zope.traversing
+zope.app.testing
+zope.app.appsetup

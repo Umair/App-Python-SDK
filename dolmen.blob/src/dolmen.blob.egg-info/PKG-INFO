@@ -1,0 +1,438 @@
+Metadata-Version: 1.0
+Name: dolmen.blob
+Version: 0.5.0
+Summary: Dolmen zodb blob handlers
+Home-page: UNKNOWN
+Author: Souheil Chelfouh
+Author-email: trollfot@gmail.com
+License: GPL
+Description: ===========
+        dolmen.blob
+        ===========
+        
+        `dolmen.blob` is a layer above `dolmen.file`, using the ZODB blobs as
+        a storage facility. It respects the `zope.file` IFile and the
+        `dolmen.file` INamedFile interfaces.
+        
+        
+        Compatibility
+        =============
+        
+        In order to make sure that our BlobFile is functional, we test it
+        against some common uses, implemented by `zope.file.file.File` and
+        `dolmen.file.NamedFile`::
+        
+        >>> from dolmen.blob import BlobFile, IBlobFile
+        
+        >>> blob = BlobFile()
+        >>> print blob.contentType
+        application/octet-stream
+        >>> blob.data
+        ''
+        >>> blob.filename
+        u''
+        
+        >>> blob = BlobFile(data='mydata', filename="foo.txt")
+        >>> blob.filename
+        u'foo.txt'
+        >>> blob.data
+        'mydata'
+        >>> blob.contentType
+        'text/plain'
+        >>> blob.mimeType
+        'text/plain'
+        
+        >>> blob = BlobFile(data=u'some random data', filename="foo.txt")
+        >>> blob.filename
+        u'foo.txt'
+        >>> blob.data
+        'some random data'
+        
+        >>> blob = BlobFile(contentType="plain/text")
+        >>> blob.filename
+        u''
+        >>> blob.data
+        ''
+        >>> blob.contentType
+        'plain/text'
+        
+        >>> import cStringIO
+        >>> data = cStringIO.StringIO("mydata")
+        >>> blob = BlobFile(data=data)
+        >>> blob.data
+        'mydata'
+        >>> blob.size
+        6
+        
+        >>> from zope.size.interfaces import ISized
+        >>> sized = ISized(blob)
+        >>> sized
+        <dolmen.file.size.Sized object at ...>
+        >>> sized.sizeForDisplay()
+        u'1 KB'
+        >>> sized.sizeForSorting()
+        ('byte', 6)
+        
+        >>> from zope.filerepresentation.interfaces import IReadFile, IWriteFile
+        >>> reader = IReadFile(blob)
+        >>> writer = IWriteFile(blob)
+        
+        >>> reader.read()
+        'mydata'
+        >>> reader.size()
+        6
+        
+        >>> writer.write('changing data')
+        >>> reader.read()
+        'changing data'
+        >>> reader.size()
+        13
+        
+        Let's verify the implementation in depth::
+        
+        >>> from dolmen.file import INamedFile
+        >>> from zope.interface import verify
+        >>> import zope.file
+        
+        >>> blob = BlobFile(data='my data')
+        >>> verify.verifyObject(IBlobFile, blob)
+        True
+        >>> verify.verifyObject(INamedFile, blob)
+        True
+        >>> verify.verifyObject(zope.file.interfaces.IFile, blob)
+        True
+        
+        
+        Storage
+        =======
+        
+        The ZODB blobs mimic a basic Python file and implement basic methods,
+        like read, write, readlines, seek, etc. In order to provide a very
+        pluggable and performant way to persist the datas, `dolmen.file`
+        proposes a storage mechanism, based on adapters. This idea, originally
+        implemented in z3c.blobfile, has been enhanced to rely on multi
+        adapters, adapting an ZODB.interfaces.IBlob and a data object.
+        
+        As seen above, in the ``compatibility`` section, the
+        dolmen.blob.BlobFile handles String, Unicode and file-like objects,
+        out of the box.
+        
+        Errors
+        ------
+        
+        If the storage can't find a way to persist the data, a
+        `dolmen.blob.StorageError` exception is raised::
+        
+        >>> blob = BlobFile(data={'something': 1})
+        Traceback (most recent call last):
+        ...
+        StorageError: An error occured during the blob storage. Check the value type (<type 'dict'>). This value should implement IFile, IString or IUnicode (see `dolmen.builtins`).
+        
+        
+        Storage implementation
+        ----------------------
+        
+        The example above shows us that the Dict object is not handled by
+        dolmen.blob, out of the box. Let's implement a storage for this
+        usecase::
+        
+        >>> import zope.component
+        >>> from ZODB.interfaces import IBlob
+        >>> from dolmen.builtins import IDict
+        >>> from dolmen.blob import IFileStorage
+        
+        >>> def store_dict(blob, dictionnary):
+        ...     dict_repr = repr(dictionnary.items())
+        ...     fp = blob.open('w')
+        ...     fp.write(dict_repr)
+        ...     fp.close()
+        ...     return True
+        
+        >>> zope.component.provideAdapter(
+        ...    store_dict, adapts=(IBlob, IDict), provides=IFileStorage)
+        
+        >>> blob = BlobFile(data={'something': 1})
+        >>> blob.data
+        "[('something', 1)]"
+        
+        
+        Blob to blob storage
+        --------------------
+        
+        `dolmen.blob` provides a blob to blob copy, using shutils::
+        
+        >>> source = BlobFile(data='Some data here')
+        >>> destination = BlobFile(data='')
+        
+        >>> destination.data = source
+        >>> destination.data
+        'Some data here'
+        
+        
+        Mimetype and charset
+        ====================
+        
+        `dolmen.blob` provides components implementing the `zope.mimetype`
+        IContentTypeAware interface. It allows your content to be manipulated
+        in order to set a mimetype and extensive headers coptions.
+        
+        Several adapters are provided by `zope.mimetype`. We don't want to
+        review them all, but there are some interesting ones.
+        
+        The IContentInfo components allow you to get detailed information for
+        your content, formatted in a convenient way, to publish them easily::
+        
+        >>> from zope.interface import alsoProvides
+        >>> from zope.mimetype.interfaces import IContentInfo
+        
+        >>> blob = BlobFile(data=u'some random data', filename="foo.txt")
+        >>> info = IContentInfo(blob)
+        >>> print info
+        <zope.mimetype.contentinfo.ContentInfo object at ...>
+        >>> print info.effectiveMimeType
+        text/plain
+        >>> print info.effectiveParameters
+        {}
+        
+        It allows a rough handling of the data encoding too::
+        
+        >>> from zope.mimetype.interfaces import IContentTypeEncoded
+        
+        >>> encoded = BlobFile(data=u'La Pe\xf1a',
+        ...                    parameters={'charset': 'utf-8'})
+        
+        >>> info = IContentInfo(encoded)
+        >>> print info.effectiveParameters
+        {}
+        
+        >>> alsoProvides(encoded, IContentTypeEncoded)
+        >>> info = IContentInfo(encoded)
+        
+        >>> info.effectiveParameters
+        {'charset': 'utf-8'}
+        
+        >>> info.effectiveMimeType
+        'application/octet-stream'
+        
+        >>> info.contentType
+        'application/octet-stream;charset=utf-8'
+        
+        >>> codec = info.getCodec()
+        >>> codec.name
+        'utf-8'
+        
+        
+        Accesses
+        ========
+        
+        Filesystem access
+        -----------------
+        
+        In some cases, it's useful to be able to be able to get the location
+        of the physical blob file on the filesystem. This is possible through
+        the attribute `physical_path`. However, this attribute is available
+        only when the file has been persisted and the transaction commited::
+        
+        >>> import transaction
+        >>> root = getRootFolder()
+        >>> root['myblob'] = BlobFile(data='my data', filename="data.txt")
+        
+        The transaction has not been commited, we try to access the attribute::
+        
+        >>> myblob = root['myblob']
+        >>> print myblob.physical_path
+        None
+        
+        We now commit the transaction and retry::
+        
+        >>> transaction.commit()
+        >>> print myblob.physical_path
+        /tmp/tmp.../....blob
+        
+        
+        Browser access
+        --------------
+        
+        .. attention::
+        
+        Please read `dolmen.file` README.txt for more information.
+        
+        As an dolmen.file.INamedFile, the BlobFile can bee accessed by the
+        browser, using a "file_publish" view::
+        
+        >>> from zope.component import getMultiAdapter
+        >>> from zope.publisher.browser import TestRequest
+        
+        >>> request = TestRequest()
+        >>> view = getMultiAdapter((myblob, request), name='file_publish')
+        >>> view
+        <dolmen.blob.access.FilePublisher object at ...>
+        
+        >>> view.update()
+        >>> for key, value in view.response.getHeaders(): print key, repr(value)
+        X-Powered-By 'Zope (www.zope.org), Python (www.python.org)'
+        Content-Length '7'
+        Content-Type 'text/plain'
+        Content-Disposition 'attachment; filename="data.txt"'
+        
+        >>> view.render()
+        <zope.file.download.DownloadResult object at ...>
+        
+        
+        Property
+        ========
+        
+        .. attention::
+        
+        Please read `dolmen.file` README.txt for more information.
+        
+        The persistency of the data can be handled, in complex object, by a
+        FileField using a BlobProperty::
+        
+        >>> from persistent import Persistent
+        >>> from dolmen.file import FileField
+        >>> from dolmen.blob import BlobProperty
+        >>> from zope.interface import Interface, implements
+        
+        >>> class IContent(Interface):
+        ...     binary = FileField(title=u"Binary data")
+        
+        >>> class MyContent(Persistent):
+        ...     implements(IContent)
+        ...     binary = BlobProperty(IContent['binary'])
+        
+        >>> root['mammoth'] = MyContent()
+        >>> manfred = root['mammoth']
+        >>> manfred.binary = 'Foobar'
+        >>> manfred.binary
+        <dolmen.blob.file.BlobValue object at ...>
+        
+        >>> verify.verifyObject(IBlobFile, manfred.binary)
+        True
+        >>> ISized(manfred.binary).sizeForDisplay()
+        u'1 KB'
+        
+        
+        Copy using zope.copy
+        ====================
+        
+        A copy hook exists for IBlob objects. It allows to copy stored
+        blobs transparently, while working with `zope.copy`::
+        
+        >>> import zope.copy
+        
+        >>> source = BlobFile(data='Some data here')
+        >>> target = zope.copy.copy(source)
+        >>> target.data
+        'Some data here'
+        
+        It works recursiverly::
+        
+        >>> from zope.container.btree import BTreeContainer
+        >>> root['gunther'] = BTreeContainer()
+        >>> root['gunther']['mammoth'] = MyContent()
+        
+        >>> manfred = root['gunther']['mammoth']
+        >>> manfred.binary = 'Some data with no interest'
+        >>> manfred.binary.filename = u"filename.txt"
+        >>> manfred.binary.mimeType = "text/plain"
+        
+        >>> copy_of_gunther = zope.copy.copy(root['gunther'])
+        >>> judith = copy_of_gunther['mammoth']
+        
+        >>> judith.binary.data
+        'Some data with no interest'
+        >>> judith.binary.filename
+        u'filename.txt'
+        >>> judith.binary.mimeType
+        'text/plain'
+        
+        
+        Changelog
+        =========
+        
+        0.5.0 (2010-02-28)
+        ------------------
+        
+        * Cleaned base code. We are now fully pep8 compliant.
+        
+        * ``dolmen.blob`` now has its own ``zope.filerepresentation``
+        adapters, in order to use the natural getters and setters. We no
+        longer need to include ``zope.file`` in the `configure.zcml`, as
+        ``dolmen.blob`` now provides all the needed components to be
+        independant.
+        
+        * Echoed ``dolmen.file`` changes and dropped ``zope.app.file`` support.
+        
+        * Dependency cleaned. Had to retain ``zope.app.testing`` and
+        ``zope.app.appsetup`` since we need the ZODB support for the
+        tests. All other zope.app dependencies have been severed.
+        
+        
+        0.4.1 (2009-11-18)
+        ------------------
+        
+        * Now using Grok 1.1a1 versions.
+        
+        * zope.copy is no longer pinned down to version 3.5 but to 3.5 and
+        greater.
+        
+        
+        0.4 (2009-11-09)
+        ----------------
+        
+        * Added ICopyHook for ZODB.interfaces.IBlob objects. Now the data is
+        copied using `zope.copy`.
+        
+        
+        0.3 (2009-11-08)
+        ----------------
+        
+        * Added Blob to Blob copy, using a new storage. Added tests for this
+        new storage.
+        
+        
+        0.2.1 (2009-10-23)
+        ------------------
+        
+        * Corrected a bug of a variable used when not defined, if a mimeType
+        was given using the contentType argument at the BlobValue creation.
+        Added a test to fix this behavior.
+        
+        
+        0.2 (2009-10-23)
+        ----------------
+        
+        * Added a bunch of new tests for the compatibility with the new
+        packages used.
+        
+        * A new access view is available for `IBlobFile` objects, returning a
+        `zope.file.download.DownloadResult`. This access view also uses
+        an adapter to `zope.mimetype.interfaces.IContentInfo` to get the
+        header values.
+        
+        * `IBlobFile` now inherits from `zope.file.interfaces.IFile`. This
+        brings in a lot of new features, including the compatibility with
+        the `zope.mimetype` package and its adapters.
+        
+        * `dolmen.blob` now proposes a non `Persistent` blob, called
+        BlobValue. It allows to have object storing an attribute value in a
+        blob, without getting an independant connection to the database
+        (Blob already do that). The BlobProperty uses this new component
+        now.
+        
+        
+        0.1 (2009-10-19)
+        ----------------
+        
+        * Initial release
+        
+Keywords: Grok Zope3 CMS Dolmen
+Platform: Any
+Classifier: Development Status :: 4 - Beta
+Classifier: Environment :: Web Environment
+Classifier: Framework :: Zope3
+Classifier: Intended Audience :: Other Audience
+Classifier: License :: OSI Approved :: GNU General Public License (GPL)
+Classifier: Operating System :: OS Independent
+Classifier: Programming Language :: Python

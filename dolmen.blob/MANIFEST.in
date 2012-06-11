@@ -1,0 +1,2 @@
+recursive-include src/dolmen/blob *.txt *.py *.zcml
+recursive-include docs *.txt

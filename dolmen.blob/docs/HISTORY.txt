@@ -1,0 +1,78 @@
+Changelog
+=========
+
+0.5.0 (2010-02-28)
+------------------
+
+* Cleaned base code. We are now fully pep8 compliant.
+
+* ``dolmen.blob`` now has its own ``zope.filerepresentation``
+  adapters, in order to use the natural getters and setters. We no
+  longer need to include ``zope.file`` in the `configure.zcml`, as
+  ``dolmen.blob`` now provides all the needed components to be
+  independant.
+
+* Echoed ``dolmen.file`` changes and dropped ``zope.app.file`` support.
+
+* Dependency cleaned. Had to retain ``zope.app.testing`` and
+  ``zope.app.appsetup`` since we need the ZODB support for the
+  tests. All other zope.app dependencies have been severed.
+
+
+0.4.1 (2009-11-18)
+------------------
+
+* Now using Grok 1.1a1 versions.
+
+* zope.copy is no longer pinned down to version 3.5 but to 3.5 and
+  greater.
+
+
+0.4 (2009-11-09)
+----------------
+
+* Added ICopyHook for ZODB.interfaces.IBlob objects. Now the data is
+  copied using `zope.copy`.
+
+
+0.3 (2009-11-08)
+----------------
+
+* Added Blob to Blob copy, using a new storage. Added tests for this
+  new storage.
+
+
+0.2.1 (2009-10-23)
+------------------
+
+* Corrected a bug of a variable used when not defined, if a mimeType
+  was given using the contentType argument at the BlobValue creation.
+  Added a test to fix this behavior.
+
+
+0.2 (2009-10-23)
+----------------
+
+* Added a bunch of new tests for the compatibility with the new
+  packages used.
+
+* A new access view is available for `IBlobFile` objects, returning a
+  `zope.file.download.DownloadResult`. This access view also uses
+  an adapter to `zope.mimetype.interfaces.IContentInfo` to get the
+  header values.
+
+* `IBlobFile` now inherits from `zope.file.interfaces.IFile`. This
+  brings in a lot of new features, including the compatibility with
+  the `zope.mimetype` package and its adapters.
+
+* `dolmen.blob` now proposes a non `Persistent` blob, called
+  BlobValue. It allows to have object storing an attribute value in a
+  blob, without getting an independant connection to the database
+  (Blob already do that). The BlobProperty uses this new component
+  now.
+
+
+0.1 (2009-10-19)
+----------------
+
+* Initial release
